@@ -1,0 +1,60 @@
+#!/bin/bash
+SCRIPT_ABS_FILENAME=`perl -e 'use Cwd "abs_path";print abs_path(shift)' "${BASH_SOURCE[0]}"`
+SCRIPT_DIR=`dirname "$SCRIPT_ABS_FILENAME"`
+
+volume="$1"
+case $volume in
+  *[!/]*/) volume=${volume%"${volume##*[!/]}"};;
+  *[/]) volume="/";;
+esac
+
+
+i=1
+dd_ret=0
+while [ $dd_ret -eq 0 ]
+do
+    echo $i
+
+    files=("$volume"/$i.*)
+    echo ${files[@]}
+    file="${files[@]}"
+    if [ -e "$file" ]
+    then
+        echo File \""$file"\" exist
+    else
+        echo File \""$file"\" does not exist
+        dd if=/dev/random of="$volume"/tmp bs=32768 count=32768
+        dd_ret=$?
+        if ! [ $dd_ret -eq 0 ]
+        then
+            echo dd failed. Disk maybe full.
+        fi
+        md5=$(md5 -q "$volume"/tmp) # -q so only the checksum is printed
+        echo md5=$md5
+        mv "$volume"/tmp "$volume"/$i.$md5
+
+        for((j=1;j<=$i-1;++j)) do
+            echo $j
+            files=("$volume"/$j.*)
+            file="${files[@]}"
+            if ! [ -e "$file" ]
+            then
+                echo File \"$file\" does not exist. Bug, exit
+                exit 1
+            else
+                md5=$(md5 -q "$file") # -q so only the checksum is printed
+                if [ $j.$md5 = $(basename "$file") ]
+                then
+                    echo file \"$file\" is ok
+                else
+                    echo file \"$file\" is damaged
+                    exit 1
+                fi
+            fi
+         done
+    fi
+
+    i=$((i+1))
+done
+echo Stopped because dd failed. If disk is full, it means it\'s ok.
+
